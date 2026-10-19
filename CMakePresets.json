@@ -1,0 +1,33 @@
+{
+  "version": 8,
+  "cmakeMinimumRequired": { "major": 4, "minor": 2, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "vs2026-base",
+      "hidden": true,
+      "generator": "Visual Studio 18 2026",
+      "architecture": "x64",
+      "toolset": "host=x64",
+      "cacheVariables": {
+        "OPTIX_ROOT": "$penv{OPTIX_ROOT}",
+        "OCCT_ROOT": "$penv{OCCT_ROOT}"
+      }
+    },
+    {
+      "name": "vs2026-debug",
+      "displayName": "Visual Studio 2026 x64 Debug",
+      "inherits": "vs2026-base",
+      "binaryDir": "${sourceDir}/out/build/vs2026-debug"
+    },
+    {
+      "name": "vs2026-release",
+      "displayName": "Visual Studio 2026 x64 Release",
+      "inherits": "vs2026-base",
+      "binaryDir": "${sourceDir}/out/build/vs2026-release"
+    }
+  ],
+  "buildPresets": [
+    { "name": "vs2026-debug", "configurePreset": "vs2026-debug", "configuration": "Debug" },
+    { "name": "vs2026-release", "configurePreset": "vs2026-release", "configuration": "Release" }
+  ]
+}

@@ -1,0 +1,14 @@
+/out/
+/build/
+/.vs/
+/CMakeUserPresets.json
+/Run.local.ps1
+/dl2.zip
+*.png
+!/docs/images/csg-before.png
+!/docs/images/csg-corrected-release.png
+!/docs/images/csg-corrected-debug.png
+*.ptx
+*.obj
+*.pdb
+*.ilk
