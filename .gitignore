@@ -1,13 +1,12 @@
 /out/
 /build/
+/output/
 /.vs/
 /CMakeUserPresets.json
 /Run.local.ps1
-/dl2.zip
 *.png
-!/docs/images/csg-before.png
-!/docs/images/csg-corrected-release.png
-!/docs/images/csg-corrected-debug.png
+!/docs/images/rounded-box-nurbs-metallic.png
+!/docs/images/rounded-box-nurbs-normals.png
 *.ptx
 *.obj
 *.pdb

@@ -8,7 +8,7 @@
 #include <sstream>
 #include <stdexcept>
 
-namespace csg {
+namespace nurbs {
 namespace {
 void checkHr(HRESULT result,const char* api,const char* file,int line) {
     if(SUCCEEDED(result)) return;

@@ -1,92 +1,72 @@
-# CSG OptiX renderer
+# NURBS OptiX renderer
 
-Windows C++20 / CUDA / OptiX prototype that renders a STEP Boolean expression using independently tessellated operands. The supplied `INPUT/box_sphere_intersection.STEP` describes **BOX DIFFERENCE SPHERE**: a 100 x 100 x 100 block minus a radius-40 sphere centred at (80, 50, 50). The input file is preserved unchanged, despite its misleading filename.
+**Direct NURBS rendering in OptiX without tessellation, with a metallic PBR material.**
 
-OCCT constructs the original primitives; OptiX traces their triangles and evaluates the Boolean tree on the GPU. The renderer creates no final Boolean B-Rep or combined Boolean mesh. Box surfaces are orange, the spherical cavity is blue, and Windows WIC writes the PNG.
+A Windows C++20 / CUDA application that imports STEP BRep topology with Open CASCADE and intersects the original rational spline surfaces on the GPU. Geometry remains a collection of weighted control points and UV boundary curves. The renderer generates no triangles and uses no tessellation fallback.
 
-## Rendered result
+**1920 x 1080 GPU performance on RTX 5060:** scene already loaded; loading, parsing, setup, transfers, validation, and PNG encoding excluded. Median of 30 frames after warmup:
 
-Actual 1280 x 720 outputs from the RTX 5060. Documentation images are saved in `docs/images`, separately from generated runtime outputs.
+| Mode | GPU frame time | GPU frames/s |
+| --- | ---: | ---: |
+| Four-sample antialiasing (image below) | **59.5 ms** | **16.8** |
+| One-sample preview | **15.3 ms** | **65.4** |
 
-| Original render | Corrected Release render |
+The four-sample mode is approximately **36 times faster** than the original GPU implementation. Both modes render NURBS directly without tessellation and use the simplified metallic PBR material.
+
+![Final OptiX NURBS render with a silver metallic PBR material](docs/images/rounded-box-nurbs-metallic.png)
+
+The final image is **1920 x 1080**, viewed from **35 degrees above horizontal**. The supplied [rounded-box STEP sample](INPUT/rounded_box_nurbs/rounded_box_nurbs.step) measures 20 x 12 x 8 model units and contains **26 BRep faces**, including **20 rational B-spline faces**. Its source was `D:\rounded_box_nurbs.step`; the copy in this repository is unchanged.
+
+## Metallic PBR material
+
+The sample uses a silver conductor with the following parameters:
+
+| Property | Value |
 | --- | --- |
-| ![Original render showing triangle lighting facets in the blue spherical cavity](docs/images/csg-before.png) | ![Corrected Release render showing smooth cavity lighting and a refined cut boundary](docs/images/csg-corrected-release.png) |
-| Coarse sphere geometry and one lighting normal per triangle. | Explicit sphere interior meshing controls, removed zero-area pole triangles, and interpolated lighting normals. |
+| Metallic | 1.0 |
+| Roughness | 0.24 |
+| Linear reflectance at normal incidence | (0.91, 0.92, 0.92) |
+| Microfacet distribution | GGX |
+| Masking and shadowing | Separable Smith |
+| Fresnel | Schlick approximation |
+| Lighting | Three GGX studio lights and a room environment lookup |
+| Evaluation | Three direct-light evaluations; no environment sampling loop |
+| Antialiasing | Four primary rays per pixel by default; optional one-ray preview |
+| Output | Filmic tone mapping, sRGB encoding, Windows WIC PNG |
 
-The corrected geometry and lighting solve different problems: tessellation improves the actual cut boundary; normal interpolation makes lighting continuous across triangles. Pixel-sized stair steps remain because the renderer uses one ray per pixel and has no antialiasing.
+Surface normals come directly from the rational surface's partial derivatives and BRep face orientation. The simplified material keeps GGX, Smith masking/shadowing, and Schlick Fresnel; source size is approximated by broadening each light's specular lobe. It replaces the original 256-sample environment integration with three direct-light evaluations and one room reflection lookup. Material and environment settings are defined in [cuda/NurbsDevice.cuh](cuda/NurbsDevice.cuh). Secondary scene reflections and shadow rays are not implemented.
 
-<details>
-<summary>Corrected Debug screenshot</summary>
+## Build and render
 
-![Corrected Debug render of the orange box with a smooth blue spherical cavity](docs/images/csg-corrected-debug.png)
+The verified development environment uses Windows x64, Visual Studio Community 2026 / MSVC 19.51, CMake 4.4.4, CUDA 13.2, OptiX 9.1, OCCT 7.9.3, and an RTX 5060. The project requires CMake 4.2 or newer, CUDA 13.2 or newer, and the OptiX 9.1 SDK.
 
-Debug and Release produced identical decoded pixels in the verified runs.
-
-</details>
-
-## Build and run on this machine
-
-Verified on **13 October 2026** in `C:\Projects\DL2_RT`.
-
-| Dependency | Installed version / location |
-| --- | --- |
-| Visual Studio Community 2026 | MSVC 19.51, Windows SDK 10.0.26100.0 |
-| CMake | 4.4.4; project requires 4.2+ |
-| CUDA Toolkit | 13.2.51; project requires 13.2+ |
-| OptiX SDK | 9.1.0 in `C:\ProgramData\NVIDIA Corporation\OptiX SDK 9.1.0` |
-| OCCT | 7.9.3 in `C:\SDKs\OCCT-7.9.3\opencascade-7.9.3-vc14-64` |
-| OCCT dependencies | TBB and jemalloc in `C:\SDKs\OCCT-7.9.3\3rdparty-vc14-64` |
-| GPU / driver | RTX 5060, compute 12.0, NVIDIA driver 616.92 |
-
-`CMakeUserPresets.json` supplies the installed SDK paths and the DLL paths for each configuration. `Run.local.ps1` launches the program with those DLL paths. Both files are machine-local and ignored by Git; the next section also gives a workflow that uses only the shared presets.
-
-Build and render Release:
+On this machine, `CMakeUserPresets.json` supplies installed SDK and runtime paths. `Run.local.ps1` uses those paths to launch the executable. Both files are machine-local and ignored by Git.
 
 ```powershell
 cd C:\Projects\DL2_RT
 cmake --preset local-release
 cmake --build --preset local-release --parallel 8
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Run.local.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Run.local.ps1 `
+    -OutputPath .\output\rounded-box-nurbs-metallic.png -ValidateNurbs
 ```
 
-Build and render Debug:
+The launcher defaults to the rounded-box sample, 1920 x 1080, and 35-degree camera elevation. It also accepts `-InputPath`, `-Width`, `-Height`, `-CameraElevation`, `-SamplesPerPixel`, `-BenchmarkFrames`, and `-Profile`. For Debug:
 
 ```powershell
 cmake --preset local-debug
 cmake --build --preset local-debug --parallel 8
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Run.local.ps1 -Configuration Debug
-```
-
-The launcher uses `INPUT` and writes `output/render-release.png` or `output/render-debug.png`. It accepts `-InputPath`, `-OutputPath`, `-Width`, and `-Height`; for example:
-
-```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Run.local.ps1 `
-    -Configuration Release -Width 1920 -Height 1080 -OutputPath .\output\render-1080p.png
+    -Configuration Debug -Width 480 -Height 360 `
+    -OutputPath .\output\rounded-box-nurbs-debug.png -ValidateNurbs
 ```
 
-The execution-policy argument applies to that PowerShell process only. The saved Windows policy is unchanged.
+The execution-policy option applies only to that PowerShell process.
 
-To open the configured Debug solution in Visual Studio:
+### Setup on another Windows machine
 
-```powershell
-cmake --open out/build/vs2026-debug
-```
+Install Visual Studio 2026 with Desktop development with C++, MSVC v145 and a Windows SDK; CMake; CUDA; and OptiX. Install OCCT with matching x64 Release and Debug libraries. The official [OCCT 7.9.3 release](https://github.com/Open-Cascade-SAS/OCCT/releases/tag/V7_9_3) supplies `opencascade-7.9.3-vc14-64-with-debug-combined.zip`, which includes the third-party dependencies used below.
 
-Select **Debug | x64** and run `CsgOptixRenderer`. The generated `.slnx` solution uses the executable directory as its debugger working directory and supplies configuration-specific OCCT DLL paths.
-
-## Setup on another Windows machine
-
-Install Visual Studio 2026 with Desktop development with C++, MSVC v145 and a Windows SDK; CMake 4.2+; CUDA Toolkit 13.2+; and OptiX SDK 9.1. Use an NVIDIA GPU and a driver compatible with both CUDA and OptiX. The verified configuration above uses OCCT 7.9.3 with matching x64 Debug and Release libraries.
-
-Download `opencascade-7.9.3-vc14-64-with-debug-combined.zip` from the [official OCCT 7.9.3 release](https://github.com/Open-Cascade-SAS/OCCT/releases/tag/V7_9_3). Extract the archive into `C:\SDKs\OCCT-7.9.3` to obtain both the OCCT directory and `3rdparty-vc14-64`.
-
-The archive retained on this machine is `C:\SDKs\downloads\opencascade-7.9.3-vc14-64-with-debug-combined.zip`. Its SHA-256 was verified against the release asset's published digest:
-
-```text
-cb008fd982c1d7725d425e10af2cc373c870a8b99d3d7b6420a9f92f89a065fe
-```
-
-Use the shared presets with your SDK paths. Change `$configuration` to `Debug` to select Debug OCCT DLLs and the Debug preset:
+Adjust these paths to your installation, then use the shared presets:
 
 ```powershell
 cd C:\Projects\DL2_RT
@@ -98,82 +78,104 @@ $preset = 'vs2026-' + $configuration.ToLowerInvariant()
 $occtDllDirectory = if ($configuration -eq 'Debug') { 'bind' } else { 'bin' }
 $env:PATH = "$env:OCCT_ROOT\win64\vc14\$occtDllDirectory;" +
     "$thirdParty\tbb-2021.13.0-x64\bin;" +
-    "$thirdParty\jemalloc-vc14-64\bin;" + $env:PATH
+    "$thirdParty\jemalloc-vc14-64\bin;" +
+    "$thirdParty\freetype-2.13.3-x64\bin;" +
+    "$thirdParty\freeimage-3.18.0-x64\bin;" +
+    "$thirdParty\ffmpeg-3.3.4-64\bin;" +
+    "$thirdParty\openvr-1.14.15-64\bin\win64;" + $env:PATH
 
 cmake --preset $preset
 cmake --build --preset $preset --parallel 8
-& ".\out\build\$preset\bin\$configuration\CsgOptixRenderer.exe" `
-    --input .\INPUT --output .\output\render.png
+& ".\out\build\$preset\bin\$configuration\NurbsOptixRenderer.exe" `
+    --input .\INPUT\rounded_box_nurbs\rounded_box_nurbs.step `
+    --output .\output\rounded-box-nurbs-metallic.png --validate-nurbs
 ```
 
-Match Debug OCCT libraries and DLLs with Debug builds, and Release with Release. The official 7.9.3 package used here requires both TBB and jemalloc on `PATH`.
+OCCT's STEP library loads application and visualization dependencies even for offscreen import, so the FreeType, FreeImage, FFmpeg, and OpenVR runtime paths are needed by this OCCT distribution. Match OCCT Debug DLLs with Debug builds and Release DLLs with Release builds. Rendering uses OptiX.
 
-If package discovery needs an explicit path, add `-DOpenCASCADE_DIR="C:/path/containing/OpenCASCADEConfig.cmake"` to the configure command. To select CUDA explicitly, add `-DCUDAToolkit_ROOT="C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.2"`.
+CMake compiles `cuda/DevicePrograms.cu` into PTX beside each executable and stages the original NURBS sample there. No separate `nvcc` invocation is needed. `cmake --open out/build/vs2026-debug` opens the generated Visual Studio solution; its startup project is `NurbsOptixRenderer`.
+
+## Command-line interface
+
+```text
+NurbsOptixRenderer
+    [--input file-or-directory]
+    [--output output.png]
+    [--width 1920] [--height 1080]
+    [--camera-elevation 35]
+    [--validate-nurbs]
+    [--samples 1|4]
+    [--benchmark frames] [--profile]
+```
+
+With no arguments, the executable reads `rounded_box_nurbs.step` beside itself and writes `output.png` in the working directory. `--input` accepts a STEP file or a directory containing exactly one `.step` or `.stp` file. Dimensions must be 1..16384. Camera elevation must be a finite angle in -89..89 degrees; positive elevation looks down on the model while preserving the viewing azimuth. The scene uses Z as up.
+
+Successful rendering returns 0. Input, import, API, or reference-validation errors return 1. Exhausting the intersection solver's subdivision or root budget returns 2 and prevents writing a successful render.
+
+## GPU frame performance
+
+Measured on the RTX 5060 in Release at 1920 x 1080 on **6 November 2026**. The benchmark loads the model and builds the OptiX scene once, warms up one frame, then times 30 GPU launches with CUDA events. It reports median, minimum, and maximum frame times. **File loading, STEP parsing, geometry preparation, pipeline/GAS creation, transfers, OCCT reference validation, and PNG encoding are excluded.** This is GPU render throughput, not the end-to-end process time or a measured GUI frame rate.
+
+| Configuration | Median GPU frame time | Equivalent GPU frames/s |
+| --- | ---: | ---: |
+| Original solver, four rays/pixel, 256-sample material | ~2,121 ms | ~0.47 |
+| Optimized solver, four rays/pixel, simplified PBR | **59.5 ms** | **16.8** |
+| Optimized solver, one ray/pixel, simplified PBR | **15.3 ms** | **65.4** |
+
+The four-ray mode is about **36 times faster** than the original measured GPU path. The one-ray preview uses the same NURBS intersection and material but omits multisample antialiasing, so silhouettes can show pixel stair steps. The final 30-frame ranges were 57.7..63.4 ms for four rays and 14.8..17.2 ms for one ray.
+
+```powershell
+# Default four-ray quality, cached scene, 30 measured GPU frames:
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Run.local.ps1 `
+    -BenchmarkFrames 30 -ValidateNurbs -OutputPath .\output\benchmark-4spp.png
+
+# One-ray preview, with the same geometry and simplified metallic PBR:
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Run.local.ps1 `
+    -SamplesPerPixel 1 -BenchmarkFrames 30 `
+    -OutputPath .\output\benchmark-1spp.png
+```
+
+The executable equivalents are `--benchmark 30 --samples 4` and `--benchmark 30 --samples 1`. `--benchmark` accepts 1..1000 frames. More than one frame enables the warmup. `--profile` adds a separately timed geometry-only launch with normal coloring; the final output still uses the metallic material. The profile showed that surface intersection dominated the original frame time.
 
 ## Rendering workflow
 
-1. **Parse the STEP expression.** Read the represented CSG solid and preserve its Boolean tree, original primitives, and placements. The supplied model resolves to three nodes: BOX, SPHERE, and DIFFERENCE.
-2. **Construct and tessellate each operand.** OCCT builds the box and sphere separately in local coordinates. The mesher applies face locations and winding corrections, discards zero-area triangles, and generates radial vertex normals for the sphere.
-3. **Build acceleration structures.** Upload the meshes and build one OptiX geometry acceleration structure (GAS) per operand. An instance acceleration structure (IAS) applies the STEP placements. Coordinates are centred for GPU precision.
-4. **Collect and classify ray intersections.** Any-hit programs collect up to 32 triangle intersections per ray. The GPU sorts and groups coincident crossings, then evaluates the Boolean tree to find the first boundary of the result.
-5. **Shade the selected boundary.** Geometric triangle normals determine entering and leaving events. Interpolated sphere normals affect lighting only. Difference boundaries reverse the normals to point out of the resulting solid, into the cavity.
-6. **Write the PNG.** WIC converts the renderer's RGBA pixels to the encoder's negotiated format and writes the selected output path.
+1. **Import and validate the STEP BRep.** OCCT transfers the faces, placements, orientation, and UV boundary curves. The importer checks BRep validity. No mesher runs; imported face triangulations are rejected.
+2. **Preserve the rational geometry.** Knot insertion converts B-spline spans into rational Bezier patches. Exact 8 x 8 subdivision of each span tightens acceleration bounds while retaining the curved surfaces and rational weights. The sample produces **1,664 rational subpatches** and **104 rational UV trim arcs**.
+3. **Build a custom-primitive GAS.** Each patch contributes a conservative AABB around its positive-weight control hull. OptiX traverses one acceleration structure containing these patches. There are no triangle vertex/index buffers.
+4. **Intersect the surfaces directly.** `__intersection__nurbs` projects each homogeneous control net into ray-aligned coordinates. Bezier hull and [Krawczyk interval-Newton tests](https://doi.org/10.1016/0022-247X(86)90303-3) exclude empty regions and identify isolated roots, allowing early double-precision Newton refinement. Coarse bounds use FP32 with numerical padding; ambiguous regions use FP64 bounds and subdivision. Final root residuals and surface derivatives are evaluated in FP64. Common spline degrees have specialized kernels; exactly affine degree-one patches use their linear ray solve. Multiple roots remain supported, and OptiX selects the nearest accepted surface.
+5. **Respect the BRep trims.** The hit's UV coordinates are classified against the rational boundary curves using an even/odd crossing rule. Positive-weight control hulls classify crossings that lie completely to one side; linear trims use a direct solve. Other monotone rational trim arcs retain bisection. Hits outside the face boundaries are rejected.
+6. **Shade the selected surface.** Surface derivatives provide its normal. The closest-hit program returns the nearest hit to ray generation, which applies metallic PBR lighting, antialiasing, tone mapping, and PNG export.
 
-CMake compiles `cuda/DevicePrograms.cu` into `DevicePrograms.ptx` beside each configuration's executable and stages a copy of the original STEP file there. PTX uses virtual architecture `compute_75`; OptiX JIT compiles it for the GPU. No separate manual `nvcc` command is needed.
+## Validation
 
-The executable supports only `--input`, `--output`, `--width`, `--height`, and `--help`. Dimensions must be 1..16384. `--input` accepts an exact STEP path or a directory containing exactly one `.step`/`.stp` file. With no arguments, it reads the staged STEP file beside the executable and writes `output.png` in the working directory at 1280 x 720.
+`--validate-nurbs` compares a grid of approximately 960 primary sample rays against OCCT's independent `IntCurvesFace_ShapeIntersector`, including the original face trims. It checks hit/miss classification, depth, and outward normal agreement. Depth tolerance is scene radius x 2e-5; the normal dot product must be at least 0.999. The check requires at least 50 matching surface hits.
 
-Console output includes the parsed tree, mesh sizes, acceleration-structure and pipeline timings, GPU render time, and hit-overflow count. Successful rendering returns 0; failures return 1. Hit overflow produces magenta pixels and exit code 2.
+It also writes a `-normals.png` diagnostic beside the output. The first antialiasing subpixel supplies the validation and diagnostic data.
 
-## Sphere analysis and correction workflow
+![Derivative normal diagnostic across the rounded box's faces, fillets, and corners](docs/images/rounded-box-nurbs-normals.png)
 
-The fix was checked against geometry and image measurements, rather than judged only by smooth shading:
+Verified after optimization on **6 November 2026**: both one-ray and four-ray Release modes passed the 960-ray OCCT comparison at 1920 x 1080, with 156 matching surface hits and no classification, depth-tolerance, or normal errors. Maximum depth differences were 1.97e-5 and 8.33e-6 model units respectively. Debug at 480 x 360 also passed its 960-ray comparison, with 209 matching surface hits. All runs had zero solver-budget failures.
 
-1. Inspect the original and corrected outputs to distinguish triangle lighting facets, geometric cut-boundary error, and pixel sampling.
-2. Audit the uploaded float mesh: radius, indices, pole degeneracy, outward winding, seam connectivity, closed edges, connected components, volume, and maximum radial error inside each triangle. Weld coincident seam/pole vertices only for topology analysis.
-3. Isolate normal interpolation while retaining the original geometry. This changed cavity lighting only; the CSG surface mask and all box/background pixels stayed identical.
-4. Set explicit OCCT boundary and face-interior meshing controls, enable deflection checks on analytical surfaces, and remove exact zero-area triangles after conversion to GPU float positions.
-5. Rebuild Debug and Release, compare decoded output pixels, and compare the rendered surface classifications against mathematical ray intersections with the exact box and sphere.
+The full-resolution four-ray normal diagnostic remains byte-identical to the original solver's diagnostic. Additional 960 x 540 renders at camera elevations 5, 75, and -35 degrees passed OCCT validation; their complete PBR images and normal diagnostics were byte-identical between the optimized mixed-precision bounds and a full-FP64 bounds reference.
 
-For this sphere, boundary linear deflection is diameter * 0.0002 = **0.016 units**, with angle **0.08 radians**. Face-interior limits are **0.008 units** and **0.04 radians**. The shorter mesher constructor otherwise defaults to twice the boundary angle inside faces and leaves analytical-surface deflection checks disabled. The box retains its original tessellation.
+The original input's SHA-256 is `09cc0f578733a4d55614f69669ce9cd81490f15f1d64300c98d95b354efc5562`.
 
-| Verification | Original | Corrected |
-| --- | ---: | ---: |
-| Sphere vertices / triangles | 1,317 / 2,578 | 33,623 / 67,082 |
-| Zero-area pole triangles | 2 | 0 |
-| Maximum triangle radial error | 0.115789 units | 0.008971 units |
-| Relative sphere volume error | 0.5524% | 0.0265% |
-| Pixel classifications differing from the exact model | 153 | 6 |
+## Supported geometry and numerical limits
 
-After excluding the original zero-area pole triangles, both meshes had consistent outward winding, no boundary or nonmanifold edges, one connected component, and Euler characteristic 2. The corrected mesh passed a strict audit requiring no degenerate triangles and maximum radial error below 0.016 units. See the [full sphere analysis](output/SphereImageAnalysis.md) for measurements and interpretation.
+Every BRep face must use a nonperiodic B-spline surface, with degree at most 3 in each parameter direction and positive finite weights. UV boundary curves support degree at most 8. Other surface types, higher degrees, periodic seam unwrapping, and trim arcs that cannot be split into monotone segments are rejected explicitly.
 
-Final Debug and Release builds completed without compiler/linker warnings. Both rendered 1280 x 720 with exit code 0, zero hit overflows, and identical decoded pixels. The measured GPU launch took **0.315 ms Release** and **4.500 ms Debug**; these single-run timings exclude meshing, pipeline setup, acceleration-structure construction, and PNG encoding.
+Intersection search uses 24 binary subdivision levels, at most 8,192 visited rectangles and eight roots per subpatch. These finite numerical limits do not guarantee completeness for arbitrary folded or nearly tangent NURBS. Validation applies to the supplied rounded-box sample.
 
-Verification also covered `--help`, rejection of width 0 and a missing input file, the no-argument staged-input run, and identical SHA-256 hashes for the original STEP file and both staged copies. Earlier fixes handled WIC pixel-format negotiation, restored tree/mesh diagnostics, and removed compiler/linker warnings.
-
-The local audit tools are retained under `out/verification`; they are generated verification artifacts, not a bundled test suite. After building them, their checks can be repeated in a PowerShell session with the Release OCCT dependency paths configured:
-
-```powershell
-.\out\verification\build\Release\audit-fine.exe --strict
-powershell.exe -NoProfile -ExecutionPolicy Bypass `
-    -File .\out\verification\CheckSphereBoundary.ps1
-```
-
-The image comparison expects the generated original, Debug, and Release PNGs in `output`. Documentation screenshots remain available independently of those files.
-
-## Source map and limits
+## Source layout
 
 | Files | Responsibility |
 | --- | --- |
-| `src/StepCsgParser.cpp`, `CsgModel.h`, `CsgTypes.h` | STEP tokenization, references, placements, and postorder Boolean tree |
-| `src/OcctMesher.cpp`, `OcctMesher.h` | Original primitive geometry, tessellation, winding, degeneracy filtering, and sphere vertex normals |
-| `src/OptixRenderer.cpp`, `ErrorChecks.h` | CUDA/OptiX resources, GAS/IAS, pipeline, shader binding table, camera, timings, and errors |
-| `cuda/DevicePrograms.cu`, `DeviceShared.h` | Ray-event collection, Boolean evaluation, boundary orientation, and lighting |
-| `src/PngWriter.cpp`, `main.cpp` | WIC PNG export and command-line interface |
-| `CMakeLists.txt`, `CMakePresets.json` | Visual Studio configuration, PTX build, and input staging |
+| `src/NurbsModel.cpp`, `NurbsModel.h` | STEP BRep import, rational patches and trims, independent OCCT validation |
+| `src/Geometry.h` | Vector and bounding-box utilities |
+| `src/OptixRenderer.cpp`, `OptixRenderer.h`, `ErrorChecks.h` | CUDA/OptiX resources, custom GAS, pipeline, SBT, camera, diagnostics, timings |
+| `cuda/NurbsDevice.cuh`, `NurbsShared.h` | Rational evaluation, intersection, UV trimming, derivative normals, metallic PBR lighting |
+| `cuda/DevicePrograms.cu`, `DeviceShared.h` | Ray generation, custom intersection and closest-hit entry points, shared launch data |
+| `src/main.cpp`, `PngWriter.cpp`, `PngWriter.h` | CLI, diagnostics, WIC PNG export |
+| `CMakeLists.txt`, `CMakePresets.json` | Build configuration, PTX compilation, sample staging |
 
-This is an offscreen, single-frame experiment for the supplied model. It has no GUI, alternate samples, general STEP importer, or runtime meshing/lighting controls. Supported reachable primitives are BLOCK and SPHERE; operators are UNION, INTERSECTION, and DIFFERENCE. Standard `SPHERE(name,radius,centre)` and placement variants are accepted. Unrelated STEP context/unit entities are parsed without unit conversion.
-
-Capacity is 16 operand slots, 63 tree nodes, and 32 raw triangle hits per ray. Coincident crossings use the greater of `8 * float_epsilon * scene_radius` and `4 * float_epsilon * abs(t)`. Duplicate crossings collapse per operand; simultaneous entering/leaving events are treated as tangent or sub-tolerance features. Initial inside states are inferred from the first non-tangent event, including an initial exit.
-
-The result boundary follows the operand triangles. Validation covers the supplied two-convex-operand case and does not establish the same error bounds for every radius, Boolean tree, or CAD tolerance case.
+Generated builds live in `out/`; runtime images live in `output/`. Both are ignored by Git. The final README screenshots are kept in `docs/images/`.

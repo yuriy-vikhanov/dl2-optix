@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace csg {
+namespace nurbs {
 inline std::string apiFailure(const char* api,int code,const char* name,const char* detail,const char* expression,const char* file,int line) {
     std::ostringstream message;
     message << api << " error " << code << " (" << (name?name:"unknown") << ") at " << file << ':' << line
@@ -36,7 +36,7 @@ template<class F> void cleanup(F&& action) noexcept {
     try { action(); } catch(const std::exception& e) { std::cerr << "Cleanup: " << e.what() << '\n'; }
 }
 }
-#define CUDA_CHECK(call) ::csg::checkCuda((call),#call,__FILE__,__LINE__)
-#define DRIVER_CHECK(call) ::csg::checkDriver((call),#call,__FILE__,__LINE__)
-#define OPTIX_CHECK(call) ::csg::checkOptix((call),#call,__FILE__,__LINE__)
-#define OPTIX_CHECK_LOG(call,log) ::csg::checkOptix((call),#call,__FILE__,__LINE__,(log))
+#define CUDA_CHECK(call) ::nurbs::checkCuda((call),#call,__FILE__,__LINE__)
+#define DRIVER_CHECK(call) ::nurbs::checkDriver((call),#call,__FILE__,__LINE__)
+#define OPTIX_CHECK(call) ::nurbs::checkOptix((call),#call,__FILE__,__LINE__)
+#define OPTIX_CHECK_LOG(call,log) ::nurbs::checkOptix((call),#call,__FILE__,__LINE__,(log))
